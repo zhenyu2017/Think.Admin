@@ -1,7 +1,7 @@
 <?php
 
 // +----------------------------------------------------------------------
-// | Think.Admin
+// | ThinkAdmin
 // +----------------------------------------------------------------------
 // | 版权所有 2014~2017 广州楚才信息科技有限公司 [ http://www.cuci.cc ]
 // +----------------------------------------------------------------------
@@ -9,7 +9,7 @@
 // +----------------------------------------------------------------------
 // | 开源协议 ( https://mit-license.org )
 // +----------------------------------------------------------------------
-// | github开源项目：https://github.com/zoujingli/Think.Admin
+// | github开源项目：https://github.com/zoujingli/ThinkAdmin
 // +----------------------------------------------------------------------
 
 namespace app\admin\controller;
@@ -38,10 +38,15 @@ class Menu extends BasicAdmin
 
     /**
      * 菜单列表
+     * @return array|string
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
+     * @throws \think\Exception
      */
     public function index()
     {
-        $this->title = '系统菜单管理';
+        $this->title = '后台菜单管理';
         $db = Db::name($this->table)->order('sort asc,id asc');
         return parent::_list($db, false);
     }
@@ -53,7 +58,9 @@ class Menu extends BasicAdmin
     protected function _index_data_filter(&$data)
     {
         foreach ($data as &$vo) {
-            ($vo['url'] !== '#') && ($vo['url'] = url($vo['url']));
+            if ($vo['url'] !== '#') {
+                $vo['url'] = url($vo['url']) . (empty($vo['params']) ? '' : "?{$vo['params']}");
+            }
             $vo['ids'] = join(',', ToolsService::getArrSubIds($data, $vo['id']));
         }
         $data = ToolsService::arr2table($data);
@@ -61,6 +68,11 @@ class Menu extends BasicAdmin
 
     /**
      * 添加菜单
+     * @return array|string
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
+     * @throws \think\Exception
      */
     public function add()
     {
@@ -69,6 +81,11 @@ class Menu extends BasicAdmin
 
     /**
      * 编辑菜单
+     * @return array|string
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
+     * @throws \think\Exception
      */
     public function edit()
     {
@@ -78,6 +95,9 @@ class Menu extends BasicAdmin
     /**
      * 表单数据前缀方法
      * @param array $vo
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
      */
     protected function _form_filter(&$vo)
     {
@@ -95,23 +115,29 @@ class Menu extends BasicAdmin
                     $current_path = "-{$vo['pid']}-{$vo['id']}";
                     if ($vo['pid'] !== '' && (stripos("{$menu['path']}-", "{$current_path}-") !== false || $menu['path'] === $current_path)) {
                         unset($menus[$key]);
+                        continue;
                     }
                 }
             }
             // 读取系统功能节点
             $nodes = NodeService::get();
-            foreach ($nodes as $key => $_vo) {
-                if (empty($_vo['is_menu'])) {
+            foreach ($nodes as $key => $node) {
+                if (empty($node['is_menu'])) {
                     unset($nodes[$key]);
                 }
             }
-            $this->assign('nodes', array_column($nodes, 'node'));
-            $this->assign('menus', $menus);
+            // 设置上级菜单
+            if (!isset($vo['pid']) && $this->request->get('pid', '0')) {
+                $vo['pid'] = $this->request->get('pid', '0');
+            }
+            $this->assign(['nodes' => array_column($nodes, 'node'), 'menus' => $menus]);
         }
     }
 
     /**
      * 删除菜单
+     * @throws \think\Exception
+     * @throws \think\exception\PDOException
      */
     public function del()
     {
@@ -123,6 +149,8 @@ class Menu extends BasicAdmin
 
     /**
      * 菜单禁用
+     * @throws \think\Exception
+     * @throws \think\exception\PDOException
      */
     public function forbid()
     {
@@ -134,6 +162,8 @@ class Menu extends BasicAdmin
 
     /**
      * 菜单禁用
+     * @throws \think\Exception
+     * @throws \think\exception\PDOException
      */
     public function resume()
     {

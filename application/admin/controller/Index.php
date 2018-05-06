@@ -1,7 +1,7 @@
 <?php
 
 // +----------------------------------------------------------------------
-// | Think.Admin
+// | ThinkAdmin
 // +----------------------------------------------------------------------
 // | 版权所有 2014~2017 广州楚才信息科技有限公司 [ http://www.cuci.cc ]
 // +----------------------------------------------------------------------
@@ -9,7 +9,7 @@
 // +----------------------------------------------------------------------
 // | 开源协议 ( https://mit-license.org )
 // +----------------------------------------------------------------------
-// | github开源项目：https://github.com/zoujingli/Think.Admin
+// | github开源项目：https://github.com/zoujingli/ThinkAdmin
 // +----------------------------------------------------------------------
 
 namespace app\admin\controller;
@@ -18,8 +18,8 @@ use controller\BasicAdmin;
 use service\DataService;
 use service\NodeService;
 use service\ToolsService;
+use think\App;
 use think\Db;
-use think\View;
 
 /**
  * 后台入口
@@ -33,75 +33,78 @@ class Index extends BasicAdmin
 
     /**
      * 后台框架布局
-     * @return View
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
      */
     public function index()
     {
         NodeService::applyAuthNode();
         $list = (array)Db::name('SystemMenu')->where(['status' => '1'])->order('sort asc,id asc')->select();
-        $menus = $this->_filterMenu(ToolsService::arr2tree($list), NodeService::get());
-        return view('', ['title' => '系统管理', 'menus' => $menus]);
+        $menus = $this->buildMenuData(ToolsService::arr2tree($list), NodeService::get(), !!session('user'));
+        if (empty($menus) && !session('user.id')) {
+            $this->redirect('@admin/login');
+        }
+        return $this->fetch('', ['title' => '系统管理', 'menus' => $menus]);
     }
 
     /**
      * 后台主菜单权限过滤
-     * @param array $menus
-     * @param array $nodes
+     * @param array $menus 当前菜单列表
+     * @param array $nodes 系统权限节点数据
+     * @param bool $isLogin 是否已经登录
      * @return array
      */
-    private function _filterMenu($menus, $nodes)
+    private function buildMenuData($menus, $nodes, $isLogin)
     {
         foreach ($menus as $key => &$menu) {
-            // 存在子菜单时，直接使用递归处理
-            if (!empty($menu['sub'])):
-                $menu['sub'] = $this->_filterMenu($menu['sub'], $nodes);
-            endif;
-            if (!empty($menu['sub'])):
+            !empty($menu['sub']) && $menu['sub'] = $this->buildMenuData($menu['sub'], $nodes, $isLogin);
+            if (!empty($menu['sub'])) {
                 $menu['url'] = '#';
-            // 菜单链接以http开头时，不做处理
-            elseif (preg_match('/^https?\:/i', $menu['url'])) :
+            } elseif (preg_match('/^https?\:/i', $menu['url'])) {
                 continue;
-            // 菜单链接不为空时，判断登录状态及权限验证
-            elseif ($menu['url'] !== '#') :
+            } elseif ($menu['url'] !== '#') {
                 $node = join('/', array_slice(explode('/', preg_replace('/[\W]/', '/', $menu['url'])), 0, 3));
-                $menu['url'] = url($menu['url']);
-                // 节点需要验证验证，未登录时移除此菜单
-                if (isset($nodes[$node]) && $nodes[$node]['is_login'] && !session('user')) :
+                $menu['url'] = url($menu['url']) . (empty($menu['params']) ? '' : "?{$menu['params']}");
+                if (isset($nodes[$node]) && $nodes[$node]['is_login'] && empty($isLogin)) {
                     unset($menus[$key]);
-                // 节点需要权限验证，无权限时移除此菜单
-                elseif (isset($nodes[$node]) && $nodes[$node]['is_auth'] && session('user') && !auth($node)) :
+                } elseif (isset($nodes[$node]) && $nodes[$node]['is_auth'] && $isLogin && !auth($node)) {
                     unset($menus[$key]);
-                endif;
-            // 非以上情况时，移除此菜单
-            else :
+                }
+            } else {
                 unset($menus[$key]);
-            endif;
+            }
         }
         return $menus;
     }
 
     /**
      * 主机信息显示
-     * @return View
+     * @return string
      */
     public function main()
     {
-        if (session('user.password') === '21232f297a57a5a743894a0e4a801fc3') {
-            $url = url('admin/index/pass') . '?id=' . session('user.id');
-            $alert = ['type' => 'danger', 'title' => '安全提示', 'content' => "超级管理员默认密码未修改，建议马上<a href='javascript:void(0)' data-modal='{$url}'>修改</a>！",];
-            $this->assign('alert', $alert);
-        }
         $_version = Db::query('select version() as ver');
-        return view('', ['mysql_ver' => array_pop($_version)['ver'], 'title' => '后台首页']);
+        return $this->fetch('', [
+            'title'     => '后台首页',
+            'think_ver' => App::VERSION,
+            'mysql_ver' => array_pop($_version)['ver'],
+        ]);
     }
 
     /**
      * 修改密码
+     * @return array|string
+     * @throws \think\Exception
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
+     * @throws \think\exception\PDOException
      */
     public function pass()
     {
         if (intval($this->request->request('id')) !== intval(session('user.id'))) {
-            $this->error('访问异常！');
+            $this->error('只能修改当前用户的密码！');
         }
         if ($this->request->isGet()) {
             $this->assign('verify', true);
@@ -123,13 +126,18 @@ class Index extends BasicAdmin
 
     /**
      * 修改资料
+     * @return array|string
+     * @throws \think\Exception
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\ModelNotFoundException
+     * @throws \think\exception\DbException
      */
     public function info()
     {
         if (intval($this->request->request('id')) === intval(session('user.id'))) {
             return $this->_form('SystemUser', 'user/form');
         }
-        $this->error('访问异常！');
+        $this->error('只能修改当前用户的资料！');
     }
 
 }
